@@ -120,7 +120,6 @@ export function streamAgent(opts: {
         const stream = anthropic.messages.stream({
           model: MODEL,
           max_tokens: 2048,
-          thinking: { type: "adaptive" },
           system,
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
         });
