@@ -1,16 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import type { SafeUser, AvailabilitySlot } from "@/lib/types";
+import type { SafeUser } from "@/lib/types";
 
-interface DoctorView {
-  id: string;
-  name: string;
-  specialization: string;
-  bio: string;
-  availability: AvailabilitySlot[];
-}
 interface ApptView {
   id: string;
   doctorName: string;
@@ -22,112 +15,105 @@ interface ApptView {
   consultationId: string | null;
 }
 
-export default function PatientDashboard({ user }: { user: SafeUser }) {
-  const [doctors, setDoctors] = useState<DoctorView[]>([]);
-  const [appts, setAppts] = useState<ApptView[]>([]);
-  const [form, setForm] = useState({ doctorId: "", date: "", time: "", reason: "" });
-  const [error, setError] = useState("");
-  const [booking, setBooking] = useState(false);
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
 
-  async function load() {
-    const [d, a] = await Promise.all([
-      fetch("/api/doctors").then((r) => r.json()),
-      fetch("/api/appointments").then((r) => r.json()),
-    ]);
-    setDoctors(d.doctors || []);
+export default function PatientDashboard({ user }: { user: SafeUser }) {
+  const [appts, setAppts] = useState<ApptView[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      role: "assistant",
+      content: `Hi ${user.name.split(" ")[0]}! I'm your Health Concierge. Tell me what's bothering you or which doctor you'd like to see, and I'll book it for you. You can also ask me about your existing appointments.`,
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  async function loadAppts() {
+    const a = await fetch("/api/appointments").then((r) => r.json());
     setAppts(a.appointments || []);
   }
 
   useEffect(() => {
-    load();
+    loadAppts();
   }, []);
 
-  const selectedDoctor = doctors.find((d) => d.id === form.doctorId);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, busy]);
 
-  async function book(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    if (!form.doctorId || !form.date || !form.time || !form.reason) {
-      setError("Please choose a doctor and fill in date, time and reason.");
-      return;
-    }
-    setBooking(true);
-    const res = await fetch("/api/appointments", {
+  async function send() {
+    const text = input.trim();
+    if (!text || busy) return;
+    setInput("");
+    const history = messages.filter((m) => m.role === "user" || m.role === "assistant");
+    setMessages((m) => [...m, { role: "user", content: text }]);
+    setBusy(true);
+
+    const res = await fetch("/api/patient/agent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ message: text, history }),
     });
-    setBooking(false);
     const data = await res.json();
+    setBusy(false);
+
     if (!res.ok) {
-      setError(data.error || "Booking failed.");
+      setMessages((m) => [...m, { role: "assistant", content: data.error || "Something went wrong." }]);
       return;
     }
-    setForm({ doctorId: "", date: "", time: "", reason: "" });
-    load();
+    setMessages((m) => [...m, { role: "assistant", content: data.reply }]);
+    if (data.appointments) setAppts(data.appointments);
   }
 
   return (
     <div className="grid cols-2">
-      <div>
-        <div className="card">
-          <h1>Welcome, {user.name}</h1>
-          <p className="muted">Book an appointment with an available doctor.</p>
-          {error && <div className="error">{error}</div>}
-          <form onSubmit={book}>
-            <label>Doctor</label>
-            <select value={form.doctorId} onChange={(e) => setForm({ ...form, doctorId: e.target.value })}>
-              <option value="">Select a doctor…</option>
-              {doctors.map((d) => (
-                <option key={d.id} value={d.id}>
-                  Dr. {d.name} — {d.specialization}
-                </option>
-              ))}
-            </select>
-
-            {selectedDoctor && (
-              <div className="notice" style={{ marginTop: 8 }}>
-                <strong>Dr. {selectedDoctor.name}</strong> · {selectedDoctor.specialization}
-                {selectedDoctor.bio ? <div className="muted">{selectedDoctor.bio}</div> : null}
-                <div className="muted" style={{ marginTop: 6 }}>
-                  Availability:{" "}
-                  {selectedDoctor.availability.length
-                    ? selectedDoctor.availability.map((s) => `${s.day} ${s.start}-${s.end}`).join(", ")
-                    : "Not specified — request a time below."}
-                </div>
-              </div>
-            )}
-
-            <div className="row">
-              <div style={{ flex: 1 }}>
-                <label>Date</label>
-                <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <label>Time</label>
-                <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} />
-              </div>
-            </div>
-
-            <label>Reason for visit</label>
-            <textarea
-              value={form.reason}
-              onChange={(e) => setForm({ ...form, reason: e.target.value })}
-              placeholder="Describe your symptoms or concern…"
-            />
-            <div style={{ marginTop: 12 }}>
-              <button className="btn" disabled={booking} type="submit">
-                {booking ? "Requesting…" : "Request appointment"}
-              </button>
-            </div>
-          </form>
+      {/* Concierge chat */}
+      <div className="card ai-panel" style={{ display: "flex", flexDirection: "column" }}>
+        <div className="row">
+          <h2 style={{ margin: 0 }}>💬 Health Concierge</h2>
+          <span className="spacer" />
+          <span className="muted">AI booking assistant</span>
         </div>
+        <div className="chat" style={{ maxHeight: 440, flex: 1, marginTop: 12 }}>
+          {messages.map((m, i) => (
+            <div className={`bubble ${m.role === "user" ? "patient" : "doctor"}`} key={i}>
+              <div className="who">{m.role === "user" ? "You" : "Concierge"}</div>
+              {m.content}
+            </div>
+          ))}
+          {busy && (
+            <div className="bubble doctor">
+              <div className="who">Concierge</div>
+              <span className="muted">Thinking…</span>
+            </div>
+          )}
+          <div ref={chatEndRef} />
+        </div>
+        <div className="row" style={{ marginTop: 12 }}>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && send()}
+            placeholder="e.g. I've had a sore throat for 3 days, book me with a GP tomorrow at 10am"
+          />
+          <button className="btn" disabled={busy} onClick={send}>
+            Send
+          </button>
+        </div>
+        <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+          The concierge books appointments and answers questions. It does not diagnose — your doctor does that in the consultation.
+        </p>
       </div>
 
+      {/* Appointments */}
       <div>
         <div className="card">
-          <h2>My appointments</h2>
-          {appts.length === 0 && <p className="muted">No appointments yet.</p>}
+          <h1 style={{ fontSize: 20 }}>My appointments</h1>
+          {appts.length === 0 && <p className="muted">No appointments yet. Ask the concierge to book one.</p>}
           {appts.map((a) => (
             <div className="list-item" key={a.id}>
               <div className="row">
