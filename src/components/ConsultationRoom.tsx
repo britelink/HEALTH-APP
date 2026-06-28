@@ -109,11 +109,12 @@ export default function ConsultationRoom({
       setAiOutput(acc);
     }
 
-    historyRef.current = [
+    const updated: AgentTurn[] = [
       ...historyRef.current,
       { role: "user", content: question },
       { role: "assistant", content: acc },
-    ].slice(-10);
+    ];
+    historyRef.current = updated.slice(-10);
     setAiBusy(false);
   }
 
