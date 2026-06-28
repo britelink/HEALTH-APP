@@ -33,18 +33,18 @@ export function serializeConsultation(c: Consultation) {
     doctorName: c.doctorName,
     reason: c.reason,
     status: c.status,
-    notes: c.notes.map((n) => ({ text: n.text, createdAt: n.createdAt })),
+    notes: c.notes.map((n) => ({ text: n.text, createdAt: n.createdAt.toISOString() })),
     prescriptions: c.prescriptions.map((p) => ({
       medication: p.medication,
       dosage: p.dosage,
       instructions: p.instructions,
-      createdAt: p.createdAt,
+      createdAt: p.createdAt.toISOString(),
     })),
     messages: c.messages.map((m) => ({
       senderRole: m.senderRole,
       senderName: m.senderName,
       text: m.text,
-      createdAt: m.createdAt,
+      createdAt: m.createdAt.toISOString(),
     })),
   };
 }
